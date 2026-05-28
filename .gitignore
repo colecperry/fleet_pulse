@@ -1,0 +1,19 @@
+# Compiled TypeScript output — never commit this, it's generated from src/
+dist/
+
+# Node dependencies — install from package.json, never commit the folder itself
+node_modules/
+
+# .env holds real secrets (DB passwords, JWT secret) — never commit it
+# Use .env.example as the committed template with placeholder values
+.env
+
+# macOS metadata files
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+
+# Test coverage output
+coverage/

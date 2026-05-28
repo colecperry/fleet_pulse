@@ -1,0 +1,26 @@
+{
+  // tsconfig.json is a config file that tells the TypeScript complier how to behave when you run tsc. Without it, tsc uses defaults that may not fit your project. This file allows you to customize the compilation process.
+  // "target" sets which JS version to output — ES2020 gives us async/await and modern syntax.
+  // "module" controls the module system — CommonJS is what Node.js uses natively (require/exports).
+  // "outDir" is where compiled JS lands; "rootDir" is where TypeScript source lives.
+  // "strict" enables all strict type checks — catches null dereferences, missing returns, etc.
+  // "esModuleInterop" lets you import CommonJS packages using ES6 import syntax (import x from 'x').
+  // "resolveJsonModule" allows importing .json files directly as typed objects.
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
