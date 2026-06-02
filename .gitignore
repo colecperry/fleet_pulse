@@ -17,3 +17,6 @@ node_modules/
 
 # Test coverage output
 coverage/
+
+# Flink connector JARs — downloaded by flink/download_jars.sh, not committed
+flink/jars/

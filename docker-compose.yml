@@ -45,7 +45,9 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      # Mapped to 5433 on the host to avoid conflict with a local postgres on 5432.
+      # Inside Docker, other containers still reach postgres on the default 5432.
+      - "5433:5432"
     environment:
       # These three variables are read directly by the official postgres image on first start to create the database and superuser. They match the values in .env.
       POSTGRES_DB: ${POSTGRES_DB}
@@ -55,6 +57,17 @@ services:
       # Named volume so DB data persists across docker-compose down/up cycles.
       # Without this, every restart wipes the database.
       - postgres_data:/var/lib/postgresql/data
+
+  # Kafdrop — web UI for browsing Kafka topics and reading individual messages.
+  # Dashboard at localhost:9000
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    depends_on:
+      - kafka
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: kafka:29092
 
   flink-jobmanager:
     image: flink:1.18-scala_2.12
@@ -66,6 +79,15 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
+    volumes:
+      # Mount each JAR as an individual file directly into /opt/flink/lib/ where Flink scans.
+      # File mounts add to the directory without replacing it — Flink's own built-in JARs stay intact.
+      # Requires running bash flink/download_jars.sh before docker-compose up.
+      - ./flink/jars/flink-connector-kafka-3.1.0-1.18.jar:/opt/flink/lib/flink-connector-kafka-3.1.0-1.18.jar
+      - ./flink/jars/kafka-clients-3.6.0.jar:/opt/flink/lib/kafka-clients-3.6.0.jar
+      - ./flink/jars/flink-connector-jdbc-3.1.2-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.1.2-1.18.jar
+      - ./flink/jars/postgresql-42.7.3.jar:/opt/flink/lib/postgresql-42.7.3.jar
+      - ./flink/job.sql:/job.sql
 
   flink-taskmanager:
     image: flink:1.18-scala_2.12
@@ -77,6 +99,11 @@ services:
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 2
+    volumes:
+      - ./flink/jars/flink-connector-kafka-3.1.0-1.18.jar:/opt/flink/lib/flink-connector-kafka-3.1.0-1.18.jar
+      - ./flink/jars/kafka-clients-3.6.0.jar:/opt/flink/lib/kafka-clients-3.6.0.jar
+      - ./flink/jars/flink-connector-jdbc-3.1.2-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.1.2-1.18.jar
+      - ./flink/jars/postgresql-42.7.3.jar:/opt/flink/lib/postgresql-42.7.3.jar
 
 volumes:
   # Declaring the volume here makes it managed by Docker Compose.

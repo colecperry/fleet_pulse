@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config(); // This must be called before any code that reads from process.env.
 
 import express from 'express';
+import telemetryRoutes from './routes/telemetry';
 
 const app = express(); // create an Express application instance. This is the main object we use to define routes and middleware.
 
@@ -17,6 +18,9 @@ const PORT = process.env.PORT || 3000; // Use the PORT from environment variable
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// Mount the telemetry router — handles POST /telemetry and (later) all GET /vehicles routes.
+app.use('/telemetry', telemetryRoutes);
 
 app.listen(PORT, () => {
   console.log(`Fleet Pulse API listening on port ${PORT}`);
