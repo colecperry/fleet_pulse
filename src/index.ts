@@ -19,11 +19,15 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Mount the telemetry router — handles POST /telemetry and (later) all GET /vehicles routes.
+// Mount the telemetry router — handles POST /telemetry and all GET /vehicles routes.
 app.use('/telemetry', telemetryRoutes);
 
-app.listen(PORT, () => {
-  console.log(`Fleet Pulse API listening on port ${PORT}`);
-});
+// Only bind to a port when running directly — not when imported by tests.
+// Supertest starts its own server internally, so a second listen() would conflict.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Fleet Pulse API listening on port ${PORT}`);
+  });
+}
 
 export default app;

@@ -3,8 +3,8 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import fs from 'fs'; // file-system module built into Node.js, used to read the SQL file as a string
-import path from 'path'; // path module built into Node.js, used to construct the path to the SQL file 
+import fs from 'fs'; // file-system module in Node.js, used to read the SQL file as a string
+import path from 'path'; // path module in Node.js, used to construct the path to the SQL file 
 import pool from './db'; // import the pool instance from db.ts to run queries
 
 async function migrate() {
@@ -14,7 +14,8 @@ async function migrate() {
 
   console.log('Running migration...');
 
-  // Send the entire SQL string to Postgres and wait for it to finish - all tables and indexes
+  // Send the entire SQL string to Postgres to create all tables and indexes
+  // .query() is a function that takes two args: the query you want to run as a SQL string, and an optional array of parameters, runs the query string in Postgres, and returns a Promise that resolves to a QueryResult object with a .rows property containing the results (array)
   await pool.query(sql);
 
   console.log('Migration complete.');

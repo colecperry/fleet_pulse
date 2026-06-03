@@ -7,19 +7,18 @@ A real-time fleet telemetry pipeline using TypeScript, Node.js, Kafka, Flink, Po
 ## Architecture
 
 ```
-                              
-                                       ┌───────PostgreSQL──────┐
-                    ┌─────Flink─────────▶ vehicle_aggregates   │
-                    │                  │                       │
-Simulator ──▶ Kafka                    │                       │
-                    │                  │                       │
-                    └────Consumer───────▶ telemetry_events ──────▶ REST API
-                                       └───────────────────────┘      │
-                                                                      ▼
-                                                                 MCP Server
-                                                                      │
-                                                                      ▼
-                                                               Claude Desktop
+                                                  ┌───────PostgreSQL──────┐
+                              ┌─────Flink───────────▶ vehicle_aggregates  │
+                              │                   │                       │
+Simulator ──▶ POST /telemetry ────▶ Kafka         │                       │
+                              │                   │                       │
+                              └────Consumer─────────▶ telemetry_events ─────▶ REST API
+                                                  └───────────────────────┘      │
+                                                                                 ▼
+                                                                            MCP Server
+                                                                                 │
+                                                                                 ▼
+                                                                          Claude Desktop
 ```   
 
 ---
@@ -57,32 +56,35 @@ Verify Kafka, Postgres, and Flink are running:
 - Flink dashboard: http://localhost:8081
 - Kafdrop (Kafka UI): http://localhost:9000
 
-### 4. Create database tables (One time, re-run if schema changes)
+### 4. Create database tables (One time, re-run if schema changes or to wipe data)
 ```bash
 npm run migrate
 ```
 
-### 5. Start the API server
-```bash
-npm run dev
-```
+### 5. Start the API server, simulator, and consumer
 
-### 6. Start the vehicle simulator
-```bash
-npm run simulate
-```
-
-You should see 5 vehicles publishing events every second in the terminal.
-
-### 7. Set up Flink connectors (one-time)
-
-Download the connector JARs before starting the stack:
+Run all three processes in one terminal with:
 
 ```bash
-bash flink/download_jars.sh
+npm run start:all
 ```
 
-> docker-compose mounts each JAR directly into `/opt/flink/lib/` inside the Flink containers. The JARs must exist locally before `docker-compose up` runs.
+This uses `concurrently` to run `npm run dev`, `npm run consume`, and `npm run simulate` in parallel, with each process color-coded in the same terminal output.
+
+> The simulator POSTs to `POST /telemetry` which requires the API server to be up. If the simulator logs a connection error on the first tick, it will recover automatically once the server is ready.
+
+Or run each in a separate terminal if you want isolated output:
+
+```bash
+npm run dev       # terminal 1
+npm run consume   # terminal 2
+npm run simulate  # terminal 3
+```
+
+Verify raw events are being written to PostgreSQL:
+```bash
+psql postgres://fleet:fleet@localhost:5433/fleet_pulse -c "SELECT vehicle_id, speed_kmph, status, recorded_at FROM telemetry_events ORDER BY recorded_at DESC LIMIT 5;"
+```
 
 ### 8. Submit the Flink job
 ```bash
@@ -91,12 +93,9 @@ docker exec -it fleet_pulse-flink-jobmanager-1 /opt/flink/bin/sql-client.sh -f /
 
 The job runs continuously — every 30 seconds it writes one aggregation row per vehicle to `vehicle_aggregates`. Monitor it at http://localhost:8081.
 
-### 8. Verify data is flowing
+### 9. Verify data is flowing
 
 ```bash
-# Check raw events
-psql postgres://fleet:fleet@localhost:5433/fleet_pulse -c "SELECT * FROM telemetry_events LIMIT 5;"
-
 # Check Flink aggregations (populated after 30s)
 psql postgres://fleet:fleet@localhost:5433/fleet_pulse -c "SELECT * FROM vehicle_aggregates LIMIT 5;"
 ```
@@ -179,10 +178,16 @@ fleet-pulse/
 │   ├── db.ts             # Postgres connection pool + query helper
 │   ├── schema.sql        # Table definitions (run once via migrate.ts)
 │   ├── migrate.ts        # One-shot script: applies schema.sql to the DB
-│   ├── simulator.ts      # Publishes fake vehicle telemetry to Kafka on a loop
-│   ├── producer.ts       # Shared Kafka producer — used by simulator and POST /telemetry
+│   ├── simulator.ts      # Simulates 5 vehicles POSTing telemetry to POST /telemetry on a loop
+│   ├── producer.ts       # Kafka producer — called by POST /telemetry to publish events
+│   ├── consumer.ts       # Reads from Kafka, writes raw events to telemetry_events
+│   ├── logger.ts         # Pino logger — pretty in dev, raw JSON in production
+│   ├── __tests__/
+│   │   ├── setup.ts                      # Swaps DATABASE_URL to TEST_DATABASE_URL before tests run
+│   │   ├── telemetry.unit.test.ts        # Validates POST /telemetry with mocked Kafka + DB
+│   │   └── telemetry.integration.test.ts # Tests GET endpoints against a real test database
 │   └── routes/
-│       └── telemetry.ts  # POST /telemetry — validates and publishes events to Kafka
+│       └── telemetry.ts  # POST /telemetry + four GET endpoints for vehicles and fleet stats
 ├── flink/
 │   ├── job.sql           # Flink SQL job: Kafka → 30s tumbling windows → vehicle_aggregates
 │   ├── download_jars.sh  # Downloads Kafka + JDBC connector JARs
@@ -207,7 +212,13 @@ fleet-pulse/
 | `npm run build`   | `tsc`                                 | Compile TypeScript to `dist/`      |
 | `npm start`       | `node dist/index.js`                  | Run compiled production build      |
 | `npm run migrate` | `ts-node src/migrate.ts`              | Apply schema.sql to the database   |
-| `npm run simulate`| `ts-node src/simulator.ts`            | Start the vehicle simulator        |
+| `npm run simulate`| `ts-node src/simulator.ts`            | Start the vehicle simulator (requires `npm run dev`) |
+| `npm run consume` | `ts-node src/consumer.ts`             | Start the Kafka consumer           |
+| `npm run start:all` | `concurrently ...`                  | Start API, consumer, and simulator together |
+| `npm test`          | `jest`                                | Run all tests                      |
+| `npm run test:unit` | `jest --testPathPatterns=unit`        | Run unit tests only (no DB needed) |
+| `npm run test:integration` | `jest --testPathPatterns=integration` | Run integration tests (requires test DB) |
+| `npm run test:coverage` | `jest --coverage`                 | Run all tests with coverage report |
 
 ---
 
@@ -224,6 +235,73 @@ fleet-pulse/
 
 ---
 
+## API Endpoints
+
+All routes are mounted under `/telemetry`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/telemetry` | Accept a telemetry event, validate, publish to Kafka |
+| `GET` | `/telemetry/vehicles/:id/latest` | Most recent raw event for a vehicle |
+| `GET` | `/telemetry/vehicles/:id/history?limit=50` | Paginated raw event log (max 500) |
+| `GET` | `/telemetry/vehicles/:id/aggregates` | Last 10 Flink 30s windows for a vehicle |
+| `GET` | `/telemetry/fleet/stats` | Fleet-wide summary: status counts + avg speed |
+
+Example requests:
+
+```bash
+# Latest position for VH-001
+curl http://localhost:3000/telemetry/vehicles/VH-001/latest
+
+# Last 100 raw events for VH-003
+curl "http://localhost:3000/telemetry/vehicles/VH-003/history?limit=100"
+
+# Flink aggregation windows for VH-002
+curl http://localhost:3000/telemetry/vehicles/VH-002/aggregates
+
+# Fleet-wide summary
+curl http://localhost:3000/telemetry/fleet/stats
+```
+
+---
+
+## Running Tests
+
+### Unit tests — no infrastructure needed
+
+Kafka and the database are both mocked. Run anywhere, no Docker required, no app server needed.
+
+```bash
+npm run test:unit
+```
+
+### Integration tests — require Docker Postgres only
+
+The integration tests hit a real database. You do **not** need the API server running — Supertest starts its own internal server automatically. You do **not** need Kafka or Flink.
+
+One-time setup (creates and migrates the test database):
+
+```bash
+docker-compose up -d
+psql postgres://fleet:fleet@localhost:5433/postgres -c "CREATE DATABASE fleet_pulse_test;"
+DATABASE_URL=postgres://fleet:fleet@localhost:5433/fleet_pulse_test npm run migrate
+```
+
+Then run any time:
+
+```bash
+npm run test:integration
+```
+
+### Run everything
+
+```bash
+npm test              # all tests
+npm run test:coverage # all tests with coverage report
+```
+
+---
+
 ## Steps Completed
 
 - [x] Step 1 — Project scaffold (TypeScript, Express, dotenv, nodemon)
@@ -232,10 +310,10 @@ fleet-pulse/
 - [x] Step 4 — Vehicle simulator
 - [x] Step 5 — Kafka producer and POST /telemetry route
 - [x] Step 6 — Flink stream processing job
-- [ ] Step 7 — Kafka consumer
-- [ ] Step 8 — REST API endpoints
-- [ ] Step 9 — Structured logging (Pino)
-- [ ] Step 10 — Tests (Jest + Supertest)
+- [x] Step 7 — Kafka consumer
+- [x] Step 8 — REST API endpoints
+- [x] Step 9 — Structured logging (Pino)
+- [x] Step 10 — Tests (Jest + Supertest)
 - [ ] Step 11 — CI/CD (GitHub Actions + Docker)
 - [ ] Step 12 — MCP server
 - [ ] Step 13 — Full README

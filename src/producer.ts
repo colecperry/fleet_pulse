@@ -1,9 +1,9 @@
-// producer.ts — creates a Kafka producer and sends telemetry events to Kafka
+// producer.ts — publishes telemetry events to Kafka on behalf of POST /telemetry.
 //
-// When a vehicle posts data, we don't write it to the database directly.
-// Instead we drop it into Kafka and let the consumer handle writing it.
+// Events are dropped into Kafka rather than written to PostgreSQL directly.
+// The consumer handles persistence independently, decoupling ingestion from storage.
 //
-// // POST /telemetry → producer.ts → Kafka → consumer.ts → PostgreSQL
+// Flow: simulator → POST /telemetry → producer.ts → Kafka → consumer.ts → PostgreSQL
 
 import { Kafka, Producer } from 'kafkajs';
 
@@ -37,7 +37,7 @@ async function getProducer(): Promise<Producer> {
 
 // Kafka expects: { topic, messages: [{ key, value }] }
 // key = vehicle_id so all events from the same vehicle go to the same partition — preserving event order
-// value = JSON string of the event (Kafka only sends bytes, not objects)
+// value = JSON string of the event (array so we could send multiple events at once)
 export async function sendTelemetryEvent(event: TelemetryEvent): Promise<void> {
   const p = await getProducer(); // create the producer, promise resolves to a Producer
   await p.send({ // await to make sure the message lands in Kafka before we move, which is a Promise that resolves to nothing
