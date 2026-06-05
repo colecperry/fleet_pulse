@@ -35,7 +35,7 @@ Simulator ──▶ POST /telemetry ────▶ Kafka         │           
 
 ### 1. Clone and install
 ```bash
-git clone https://github.com/your-username/fleet-pulse.git
+git clone https://github.com/colecperry/fleet_pulse.git
 cd fleet-pulse
 npm install
 cp .env.example .env
@@ -86,14 +86,14 @@ Verify raw events are being written to PostgreSQL:
 psql postgres://fleet:fleet@localhost:5433/fleet_pulse -c "SELECT vehicle_id, speed_kmph, status, recorded_at FROM telemetry_events ORDER BY recorded_at DESC LIMIT 5;"
 ```
 
-### 8. Submit the Flink job
+### 6. Submit the Flink job
 ```bash
 docker exec -it fleet_pulse-flink-jobmanager-1 /opt/flink/bin/sql-client.sh -f /job.sql
 ```
 
 The job runs continuously — every 30 seconds it writes one aggregation row per vehicle to `vehicle_aggregates`. Monitor it at http://localhost:8081.
 
-### 9. Verify data is flowing
+### 7. Verify data is flowing
 
 ```bash
 # Check Flink aggregations (populated after 30s)
@@ -107,8 +107,8 @@ Or browse Kafka messages at http://localhost:9000 — click the `telemetry` topi
 Kafdrop is a web UI for browsing Kafka topics and reading individual messages.
 
 ```bash
-# Start the simulator in one terminal
-npm run simulate
+# Start the pipeline (API + consumer + simulator)
+npm run start:all
 
 # Open Kafdrop in your browser
 open http://localhost:9000
@@ -188,6 +188,12 @@ fleet-pulse/
 │   │   └── telemetry.integration.test.ts # Tests GET endpoints against a real test database
 │   └── routes/
 │       └── telemetry.ts  # POST /telemetry + four GET endpoints for vehicles and fleet stats
+├── mcp/
+│   ├── src/
+│   │   └── index.ts      # MCP server — 6 tools exposing pipeline data to Claude
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── README.md         # Setup instructions and example queries for Claude Desktop
 ├── flink/
 │   ├── job.sql           # Flink SQL job: Kafka → 30s tumbling windows → vehicle_aggregates
 │   ├── download_jars.sh  # Downloads Kafka + JDBC connector JARs
@@ -196,6 +202,8 @@ fleet-pulse/
 ├── .env                  # Local secrets (not committed)
 ├── .env.example          # Committed template with placeholder values
 ├── .gitignore
+├── .dockerignore         # Excludes secrets, test code, and build artifacts from Docker image
+├── Dockerfile            # Multi-stage production build (builder → production)
 ├── docker-compose.yml    # Local infrastructure (Kafka, Postgres, Flink)
 ├── package.json
 ├── tsconfig.json
@@ -206,32 +214,32 @@ fleet-pulse/
 
 ## npm Scripts
 
-| Script          | Command                               | Purpose                       |
-|-----------------|---------------------------------------|-------------------------------|
-| `npm run dev`     | `nodemon --exec ts-node src/index.ts` | Start server with live reload      |
-| `npm run build`   | `tsc`                                 | Compile TypeScript to `dist/`      |
-| `npm start`       | `node dist/index.js`                  | Run compiled production build      |
-| `npm run migrate` | `ts-node src/migrate.ts`              | Apply schema.sql to the database   |
-| `npm run simulate`| `ts-node src/simulator.ts`            | Start the vehicle simulator (requires `npm run dev`) |
-| `npm run consume` | `ts-node src/consumer.ts`             | Start the Kafka consumer           |
-| `npm run start:all` | `concurrently ...`                  | Start API, consumer, and simulator together |
-| `npm test`          | `jest`                                | Run all tests                      |
-| `npm run test:unit` | `jest --testPathPatterns=unit`        | Run unit tests only (no DB needed) |
-| `npm run test:integration` | `jest --testPathPatterns=integration` | Run integration tests (requires test DB) |
-| `npm run test:coverage` | `jest --coverage`                 | Run all tests with coverage report |
+| Script                    | Command                              | Purpose                       
+|---------------------------|--------------------------------------|------------------------------------------------
+| `npm run dev`             | `nodemon --exec ts-node src/index.ts`| Start server with live reload      
+| `npm run build`           | `tsc`                                | Compile TypeScript to `dist/`      
+| `npm start`               | `node dist/index.js`                 | Run compiled production build      
+| `npm run migrate`         | `ts-node src/migrate.ts`             | Apply schema.sql to the database   
+| `npm run simulate`        | `ts-node src/simulator.ts`           | Start the vehicle simulator (requires `npm run dev`) 
+| `npm run consume`         | `ts-node src/consumer.ts`            | Start the Kafka consumer           
+| `npm run start:all`       | `concurrently ...`                   | Start API, consumer, and simulator together 
+| `npm test`                | `jest`                               | Run all tests                      
+| `npm run test:unit`       | `jest --testPathPatterns=unit`       | Run unit tests only (no DB needed) 
+| `npm run test:integration`| `jest --testPathPatterns=integration`| Run integration tests (requires test DB) 
+| `npm run test:coverage`   | `jest --coverage`                    | Run all tests with coverage report 
 
 ---
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `PORT` | HTTP server port | `3000` |
-| `DATABASE_URL` | PostgreSQL connection string | — |
-| `TEST_DATABASE_URL` | Separate DB for integration tests | — |
-| `KAFKA_BROKER` | Kafka broker address (`host:port`) | — |
-| `SIMULATOR_INTERVAL_MS` | How often the simulator ticks per vehicle | `1000` |
-| `LOG_LEVEL` | Pino log level (`info`, `debug`, etc.) | `info` |
+| Variable                | Description                               | Default |
+|-------------------------|-------------------------------------------|---------|
+| `PORT`                  | HTTP server port                          | `3000`  |
+| `DATABASE_URL`          | PostgreSQL connection string              | —       |
+| `TEST_DATABASE_URL`     | Separate DB for integration tests         | —       |
+| `KAFKA_BROKER`          | Kafka broker address (`host:port`)        | —       |
+| `SIMULATOR_INTERVAL_MS` | How often the simulator ticks per vehicle | `1000`  |
+| `LOG_LEVEL`             | Pino log level (`info`, `debug`, etc.)    | `info`  |
 
 ---
 
@@ -239,13 +247,13 @@ fleet-pulse/
 
 All routes are mounted under `/telemetry`.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/telemetry` | Accept a telemetry event, validate, publish to Kafka |
-| `GET` | `/telemetry/vehicles/:id/latest` | Most recent raw event for a vehicle |
-| `GET` | `/telemetry/vehicles/:id/history?limit=50` | Paginated raw event log (max 500) |
-| `GET` | `/telemetry/vehicles/:id/aggregates` | Last 10 Flink 30s windows for a vehicle |
-| `GET` | `/telemetry/fleet/stats` | Fleet-wide summary: status counts + avg speed |
+| Method |                  Path                      |                     Description                      
+|--------|--------------------------------------------|------------------------------------------------------
+| `POST` | `/telemetry`                               | Accept a telemetry event, validate, publish to Kafka 
+| `GET`  | `/telemetry/vehicles/:id/latest`           | Most recent raw event for a vehicle 
+| `GET`  | `/telemetry/vehicles/:id/history?limit=50` | Paginated raw event log (max 500) 
+| `GET`  | `/telemetry/vehicles/:id/aggregates`       | Last 10 Flink 30s windows for a vehicle 
+| `GET`  | `/telemetry/fleet/stats`                   | Fleet-wide summary: status counts + avg speed 
 
 Example requests:
 
@@ -262,6 +270,22 @@ curl http://localhost:3000/telemetry/vehicles/VH-002/aggregates
 # Fleet-wide summary
 curl http://localhost:3000/telemetry/fleet/stats
 ```
+
+---
+
+## MCP Server (Claude Desktop integration)
+
+The `mcp/` directory contains a standalone MCP server that exposes the pipeline to Claude as callable tools. Instead of writing curl commands, you ask Claude in plain English — "which vehicles are speeding right now?" — and it queries the database and answers.
+
+Build it once:
+
+```bash
+cd mcp
+npm install
+npm run build
+```
+
+Then see [mcp/README.md](mcp/README.md) for the full setup: how to add the server to `claude_desktop_config.json`, example queries, and prerequisites.
 
 ---
 
@@ -299,21 +323,3 @@ npm run test:integration
 npm test              # all tests
 npm run test:coverage # all tests with coverage report
 ```
-
----
-
-## Steps Completed
-
-- [x] Step 1 — Project scaffold (TypeScript, Express, dotenv, nodemon)
-- [x] Step 2 — Docker Compose infrastructure (Kafka, Zookeeper, PostgreSQL, Flink)
-- [x] Step 3 — PostgreSQL schema and connection pool
-- [x] Step 4 — Vehicle simulator
-- [x] Step 5 — Kafka producer and POST /telemetry route
-- [x] Step 6 — Flink stream processing job
-- [x] Step 7 — Kafka consumer
-- [x] Step 8 — REST API endpoints
-- [x] Step 9 — Structured logging (Pino)
-- [x] Step 10 — Tests (Jest + Supertest)
-- [ ] Step 11 — CI/CD (GitHub Actions + Docker)
-- [ ] Step 12 — MCP server
-- [ ] Step 13 — Full README

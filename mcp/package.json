@@ -1,0 +1,24 @@
+{
+  "name": "fleet-pulse-mcp",
+  "version": "1.0.0",
+  "description": "MCP server exposing Fleet Pulse pipeline data to Claude",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^16.4.5",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2"
+  }
+}

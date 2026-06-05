@@ -1,0 +1,28 @@
+# .dockerignore works like .gitignore but for the Docker build context.
+# Before the Dockerfile COPY command, Docker takes your entire project folder and sends it to Docker Daemond as the build context, so even if your DockerFile only never copies .env, those files were still sent to the Docker Daemon and could be exposed in build logs 
+
+# Node dependencies — reinstalled inside the image via npm ci
+node_modules/
+
+# Compiled output — rebuilt inside the image
+dist/
+
+# Secrets — must never be baked into the image
+.env
+
+# Test code — not needed in a production image
+src/__tests__/
+jest.config.ts
+
+# Flink directory — not part of the API container
+flink/
+
+# Git history — not needed in the image
+.git/
+
+# Documentation
+README.md
+*.md
+
+# Compose file — only used by the host to orchestrate containers
+docker-compose.yml
