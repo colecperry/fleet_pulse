@@ -21,6 +21,13 @@ Simulator ──▶ POST /telemetry ────▶ Kafka         │           
                                                                           Claude Desktop
 ```   
 
+1. The simulator sends an HTTP POST to /telemetry — it doesn't know about Kafka or Postgres, it just speaks HTTP to one endpoint
+2. The Express route validates the payload and publishes it to Kafka — the route's only job is to be the entry point and reject bad data early
+3. From Kafka, two things happen in parallel:
+- Flink reads and writes 30-second aggregations to vehicle_aggregates
+- The consumer reads and writes raw events to telemetry_events
+4. Both tables feed the REST API (4 GET ENDPOINTS), which feeds the MCP Server, which lets Claude answer questions about the fleet in plain English
+
 ---
 
 ## Prerequisites
